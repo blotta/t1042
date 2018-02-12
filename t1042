@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# Script to display bookings in T1042/DB1042
+# Give a datespec on the command line, or no args for today.
+#
+# CTyler 2015-05-13, updated after wiki move 2016-08-05
+# updated with -w argument (week) 2017-01-30
+#
+
+function show_day() {
+	cat $TEMPFILE|
+	egrep "</?td|</?tr"|tr -d "\012"|
+	sed "s|</tr><tr>|</tr>\n<tr>|g"|
+	sed -n "s|<tr><td>$(date +%Y-%m-%d -d "$*") \([0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]\)</td><td>\([^<]\+\)</td>.*$|    \1 \2|p"|
+	sort
+}
+
+function check_day() {
+	date -d "$*" >&/dev/null 
+	return $?
+}
+	
+function usage() {
+	exec >&2
+	echo "Invalid dateSpecification."
+	echo "Usage: $(basename $0) [-w] dateSpecification"
+	echo "Where: dateSpecification is valid date (e.g., 2038-01-01 or Next Tuesday)"
+	echo "        -w   causes a full week to be output."
+	exit 1
+}
+	
+if  grep -qi t1042 <<<$0 
+then
+	ROOMNAME="T1042" # traditional name
+else
+	ROOMNAME="DB1042" # new name
+fi
+
+trap "rm \$TEMPFILE" SIGHUP SIGINT EXIT
+
+TEMPFILE=$(mktemp)
+curl https://wiki.cdot.senecacollege.ca/wiki/Meeting_Room_T1042 2>/dev/null >$TEMPFILE
+
+echo
+
+if [ "$1" == "-w" ]
+then
+	shift
+
+	if check_day "$*"
+	then
+		echo "${ROOMNAME} schedule for the week of $(date -d "$*" +%Y-%m-%d):"
+		for X in {0..6}
+		do
+			echo 
+			date -d "$(( X - $(date +%w) )) day" +"  %A:"
+			show_day "$(date -d "$(date -d "$*") + $(( X - $(date +%w) )) day")"
+		done
+	else
+		usage
+		exit 1
+	fi
+else
+	if check_day "$*"
+	then	
+		echo "${ROOMNAME} schedule for $(date +%Y-%m-%d -d "$*"):"
+		show_day "$@"
+	else
+		usage
+		exit 1
+	fi
+
+fi
+echo
+
+
