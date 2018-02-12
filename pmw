@@ -1,0 +1,66 @@
+#!/bin/bash
+#
+# pmw :: Post to MediaWiki
+#
+# Simple script for posting to a MediaWiki page. Used to be used for updating
+# one of the pages on the CDOT wiki, when it was hosted on Zenit.
+
+# Login, saving the cookies in /tmp/cookie-jar
+curl 	-c /tmp/cookie-jar 			\
+	-d "wpName=NNNNNNN" 			\
+	-d "wpPassword=PPPPPPPP" 		\
+	-d "wpLoginattempt=Log+in" 		\
+	"http://localhost/wiki/index.php/Special:UserLogin" \
+	-o /dev/null
+
+# Edit the duration of the session-only cookie
+sed 	-i "s/\t0\t/\t1299999999\t/" 		\
+	/tmp/cookie-jar
+
+# Get the edit page, to get values for wpEditToken, wpStartime, wpEdittime
+curl 	-b @/tmp/cookie-jar 			\
+	-c /tmp/cookie-jar2			\
+	'http://localhost/wiki/index.php?title=Template:Planet_Current_Posts&action=edit' \
+	-o /tmp/x2
+
+# Edit the duration of the session-only cookie
+sed 	-i "s/\t0\t/\t1299999999\t/" 		\
+	/tmp/cookie-jar2
+
+# Get various values and save them in files (wpEditToken can't be passed on command line)
+wpEditToken=$(sed -n '/wpEditToken/s/^.*value="\([^"]*\)".*$/\1/p' /tmp/x2| tr -d "\012") #>/tmp/wpEditToken
+wpEdittime=$(sed -n '/wpStarttime/s/^.*value="\([^"]*\)".*$/\1/p' /tmp/x2 | tr -d "\012") #>/tmp/wpStarttime
+wpStarttime=$(sed -n '/wpEdittime/s/^.*value="\([^"]*\)".*$/\1/p'  /tmp/x2| tr -d "\012") #>/tmp/wpEdittime
+wpAutoSummary=$(tr ">" "\012" </tmp/x2|sed -n '/wpAutoSummary/s/^.*value="\([^"]*\)".*$/\1/p'| tr -d "\012") #>/tmp/wpAutoSummary
+
+echo "wpEditToken: $wpEditToken"
+echo "wpAutoSummary: $wpAutoSummary"
+
+# URL for final step...
+URL='http://localhost/wiki/index.php?title=Template:Planet_Current_Posts&action=submit' 
+#URL='http://zenit.senecac.on.ca/wiki/index.php?title=Template:Planet_Current_Posts&action=submit'
+#URL='http://localhost/set.cgi'
+
+# Sleep so we don't post an instant edit
+sleep 3
+
+# Post the form data, and save the results in /tmp/x
+curl 	-b @/tmp/cookie-jar2			\
+	-F "wpMinoredit=" 			\
+	-F "wpWatchthis=" 			\
+	-F "wpSummary="				\
+	-F "wpAutoSummary=${wpAutoSummary}"	\
+	-F "wpSection=" 			\
+	-F "wpStarttime=${wpStarttime}" 	\
+	-F "wpEdittime=${wpEdittime}"		\
+	-F "wpScrolltop=" 			\
+	-F "wpTextbox1=</tmp/content" 		\
+	-F "wpEditToken=${wpEditToken}" 	\
+	-F "wpSave=Save page" 			\
+	$URL					\
+	-D "/tmp/headers"			\
+	-L					\
+	>/tmp/x
+
+echo "Result code: $?"
+
