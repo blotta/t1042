@@ -28,7 +28,30 @@ function usage() {
 	echo "        -w   causes a full week to be output."
 	exit 1
 }
-	
+
+function round_date(){
+    # args: 1-> date; 2-> optional round unit
+
+    # default 15 Minute Round
+    local unit_s=$(( ${2:-15} * 60 ))
+    local halfu_s=$(( $unit_s / 2 ))
+    local sections=$(( 3600 / $unit_s ))
+    local Y m d H M
+    eval $(date +Y=%Y\;m=%m\;d=%d\;H=%H\;M=%M -d "$1")
+    local total_s=$(( $H * 3600 + $M * 60 ))
+    [ "$(( $total_s % $unit_s ))" -eq 0 ] && date -d "$1" && return
+    # local section=$(echo "($total_s / $unit_s ) % $sections " | bc)
+    local section=$(python2 -c \
+        "print '%d' % round(($total_s / float(${unit_s})) % $sections)")
+    # section=$(LC_ALL=C printf '%.*f\n' 0 $section ) # Round to the nearest unit
+    local round_time_s=$(( ($unit_s * $section ) + $H * 3600 ))
+    H=$(( $round_time_s / 3600 ))
+    M=$(( ($round_time_s - $H * 3600) / 60 ))
+
+    date -d "$Y-$m-$d $H:$M"
+}
+
+
 if  grep -qi t1042 <<<$0 
 then
 	ROOMNAME="T1042" # traditional name
@@ -60,6 +83,42 @@ then
 		usage
 		exit 1
 	fi
+elif [ "$1" == 'add' ]
+then
+    shift
+    if [ $# -lt 2 ] || [ $# -gt 7 ]
+    then
+        echo 'Invalid number of arguments' >&2
+        usage
+    fi
+
+    # Parse date input
+    if [ $1 == 'from' ] # Expect range
+    then
+        shift
+        td1=$1 # from date
+        shift
+        if [ $1 == 'until' ]
+        then
+            td2=$2
+            shift 2
+        else
+            echo 'Invalid arguments for range' >&2
+            usage
+        fi
+    elif [ $1 == 'until' ] # from is rounded "now"
+    then
+        shift
+        td1=$(date -d 'now')
+        td2=$1
+        shift
+    else
+        td1=$1
+        shift
+    fi
+
+
+
 else
 	if check_day "$*"
 	then	
@@ -73,4 +132,8 @@ else
 fi
 echo
 
-
+# Adding
+# t1042 add tomorrow "OSTEP Meeting" by "Lucas Blotta"
+# t1042 add from tomorrow until "next week" "Code Review" # get 'by' from cfg or ask on runtime
+# t1042 add until "april 1" "Plan prank" 
+# t1042 add (<date>|[from <date>] until <date>) <purpose> [ by <Contact Person> ]
