@@ -34,22 +34,30 @@ function round_date(){
 
     # default 15 Minute Round
     local unit_s=$(( ${2:-15} * 60 ))
-    local halfu_s=$(( $unit_s / 2 ))
-    local sections=$(( 3600 / $unit_s ))
-    local Y m d H M
-    eval $(date +Y=%Y\;m=%m\;d=%d\;H=%H\;M=%M -d "$1")
-    local total_s=$(( $H * 3600 + $M * 60 ))
-    [ "$(( $total_s % $unit_s ))" -eq 0 ] && date -d "$1" && return
-    # local section=$(echo "($total_s / $unit_s ) % $sections " | bc)
+    local Y m d H M S
+    eval $(date +Y=%Y\;m=%m\;d=%d\;H=%H\;M=%M\;S=%S -d "$1")
+    local total_s=$(( $H * 3600 + $M * 60 + $S ))
+    # [ "$(( $total_s % $unit_s ))" -eq 0 ] && date -d "$1" && return
     local section=$(python2 -c \
-        "print '%d' % round(($total_s / float(${unit_s})) % $sections)")
+        "print '%d' % round($total_s / float(${unit_s}) )")
+    # local section=$(echo "$total_s / $unit_s " | bc -l)
     # section=$(LC_ALL=C printf '%.*f\n' 0 $section ) # Round to the nearest unit
-    local round_time_s=$(( ($unit_s * $section ) + $H * 3600 ))
+    local round_time_s=$(( $unit_s * $section ))
     H=$(( $round_time_s / 3600 ))
     M=$(( ($round_time_s - $H * 3600) / 60 ))
 
-    date -d "$Y-$m-$d $H:$M"
+    local nd=$(( $H / 24 ))
+    if [ $nd -ge 1 ]
+    then
+        let 'H%=24'
+        nd="$(printf 'next day %.0s' $(seq 1 $nd))"
+    else
+        nd=''
+    fi
+
+    date -d "$Y-$m-$d $H:$M ${nd}"
 }
+
 
 
 if  grep -qi t1042 <<<$0 
@@ -59,10 +67,14 @@ else
 	ROOMNAME="DB1042" # new name
 fi
 
-trap "rm \$TEMPFILE" SIGHUP SIGINT EXIT
+#trap "rm \$TEMPFILE" SIGHUP SIGINT EXIT
 
-TEMPFILE=$(mktemp)
-curl https://wiki.cdot.senecacollege.ca/wiki/Meeting_Room_T1042 2>/dev/null >$TEMPFILE
+#TEMPFILE=$(mktemp)
+#curl https://wiki.cdot.senecacollege.ca/wiki/Meeting_Room_T1042 2>/dev/null >$TEMPFILE
+TEMPFILE='/tmp/t1042-mr'
+[ -f $TEMPFILE ] || \
+    curl https://wiki.cdot.senecacollege.ca/wiki/Meeting_Room_T1042 \
+    2>/dev/null >$TEMPFILE
 
 echo
 
@@ -93,29 +105,46 @@ then
     fi
 
     # Parse date input
-    if [ $1 == 'from' ] # Expect range
+    if [ "$1" == 'from' ] # Expect range
     then
         shift
-        td1=$1 # from date
+        td1="$1" # from date
         shift
-        if [ $1 == 'until' ]
+        if [ "$1" == 'until' ]
         then
-            td2=$2
+            td2="$2"
             shift 2
         else
             echo 'Invalid arguments for range' >&2
             usage
         fi
-    elif [ $1 == 'until' ] # from is rounded "now"
+    elif [ "$1" == 'until' ] # from is rounded "now"
     then
         shift
-        td1=$(date -d 'now')
-        td2=$1
+        td1="$(date)"
+        td2="$1"
         shift
     else
-        td1=$1
+        td1="$1"
+        td2="$td1"
         shift
     fi
+
+    td1="$(round_date "$td1")"
+    td2="$(round_date "$td2")"
+
+    purpose="$1"
+    shift
+
+    if [ "$1" == 'by' ]
+    then
+        contact_p="$2"
+        shift 2
+    fi
+
+    echo -n "Add entry from $td1 until $td2 "
+    echo -n "with purpose being $purpose "
+    echo  "${contact_p:+by $contact_p}"
 
 
 
